@@ -1,0 +1,221 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "workflows_LogicApp_RosettaNet_GetSessionStatus_name": {
+            "defaultValue": "LogicApp-RosettaNet-GetSessionStatus",
+            "type": "String"
+        },
+        "connections_kusto_externalid": {
+            "defaultValue": "/subscriptions/b6eb7b1a-37a0-4d56-b939-71c027a73bb9/resourceGroups/yuaf-MS-Azure-Internal-Resource-Group/providers/Microsoft.Web/connections/kusto",
+            "type": "String"
+        },
+        "connections_webcontents_1_externalid": {
+            "defaultValue": "/subscriptions/b6eb7b1a-37a0-4d56-b939-71c027a73bb9/resourceGroups/yuaf-MS-Azure-Internal-Resource-Group/providers/Microsoft.Web/connections/webcontents-1",
+            "type": "String"
+        }
+    },
+    "variables": {},
+    "resources": [
+        {
+            "type": "Microsoft.Logic/workflows",
+            "apiVersion": "2017-07-01",
+            "name": "[parameters('workflows_LogicApp_RosettaNet_GetSessionStatus_name')]",
+            "location": "eastus",
+            "properties": {
+                "state": "Enabled",
+                "definition": {
+                    "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+                    "contentVersion": "1.0.0.0",
+                    "parameters": {
+                        "$connections": {
+                            "defaultValue": {},
+                            "type": "Object"
+                        }
+                    },
+                    "triggers": {
+                        "manual": {
+                            "type": "Request",
+                            "kind": "Http",
+                            "inputs": {
+                                "schema": {
+                                    "properties": {
+                                        "SessionID": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "actions": {
+                        "Initialize_variable": {
+                            "runAfter": {},
+                            "type": "InitializeVariable",
+                            "inputs": {
+                                "variables": [
+                                    {
+                                        "name": "SubscriptionID",
+                                        "type": "string",
+                                        "value": "b6eb7b1a-37a0-4d56-b939-71c027a73bb9"
+                                    }
+                                ]
+                            }
+                        },
+                        "Initialize_variable_2": {
+                            "runAfter": {
+                                "Initialize_variable": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "InitializeVariable",
+                            "inputs": {
+                                "variables": [
+                                    {
+                                        "name": "ResourceGroup",
+                                        "type": "string",
+                                        "value": "Resource-Group-RosettaNet"
+                                    }
+                                ]
+                            }
+                        },
+                        "Initialize_variable_3": {
+                            "runAfter": {
+                                "Initialize_variable_2": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "InitializeVariable",
+                            "inputs": {
+                                "variables": [
+                                    {
+                                        "name": "IntegrationAccountName",
+                                        "type": "string",
+                                        "value": "Integration-Account-RosettaNet"
+                                    }
+                                ]
+                            }
+                        },
+                        "Initialize_variable_4": {
+                            "runAfter": {
+                                "Parse_JSON": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "InitializeVariable",
+                            "inputs": {
+                                "variables": [
+                                    {
+                                        "name": "SHA256",
+                                        "type": "string",
+                                        "value": "@body('Parse_JSON')[0]['h1']"
+                                    }
+                                ]
+                            }
+                        },
+                        "Invoke_an_HTTP_request": {
+                            "runAfter": {
+                                "Initialize_variable_4": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "ApiConnection",
+                            "inputs": {
+                                "body": {
+                                    "method": "GET",
+                                    "url": "https://management.azure.com/subscriptions/@{variables('SubscriptionID')}/resourceGroups/@{variables('ResourceGroup')}/providers/Microsoft.Logic/integrationAccounts/Integration-Account-RosettaNet/sessions/RN_Responder_@{variables('SHA256')}?api-version=2016-06-01"
+                                },
+                                "host": {
+                                    "connection": {
+                                        "name": "@parameters('$connections')['webcontents']['connectionId']"
+                                    }
+                                },
+                                "method": "post",
+                                "path": "/codeless/InvokeHttp"
+                            }
+                        },
+                        "Parse_JSON": {
+                            "runAfter": {
+                                "Run_query_and_list_results": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "ParseJson",
+                            "inputs": {
+                                "content": "@body('Run_query_and_list_results')?['value']",
+                                "schema": {
+                                    "items": {
+                                        "properties": {
+                                            "h1": {
+                                                "type": "string"
+                                            }
+                                        },
+                                        "required": [
+                                            "h1"
+                                        ],
+                                        "type": "object"
+                                    },
+                                    "type": "array"
+                                }
+                            }
+                        },
+                        "Response": {
+                            "runAfter": {
+                                "Invoke_an_HTTP_request": [
+                                    "Succeeded",
+                                    "Failed"
+                                ]
+                            },
+                            "type": "Response",
+                            "kind": "Http",
+                            "inputs": {
+                                "body": "@body('Invoke_an_HTTP_request')",
+                                "statusCode": 200
+                            }
+                        },
+                        "Run_query_and_list_results": {
+                            "runAfter": {
+                                "Initialize_variable_3": [
+                                    "Succeeded"
+                                ]
+                            },
+                            "type": "ApiConnection",
+                            "inputs": {
+                                "body": {
+                                    "cluster": "https://processus.kusto.windows.net",
+                                    "csl": "print \nh1=hash_sha256(\"@{triggerBody()?['SessionID']}\")",
+                                    "db": "process"
+                                },
+                                "host": {
+                                    "connection": {
+                                        "name": "@parameters('$connections')['kusto']['connectionId']"
+                                    }
+                                },
+                                "method": "post",
+                                "path": "/ListKustoResults/false"
+                            }
+                        }
+                    },
+                    "outputs": {}
+                },
+                "parameters": {
+                    "$connections": {
+                        "value": {
+                            "kusto": {
+                                "connectionId": "[parameters('connections_kusto_externalid')]",
+                                "connectionName": "kusto",
+                                "id": "/subscriptions/b6eb7b1a-37a0-4d56-b939-71c027a73bb9/providers/Microsoft.Web/locations/eastus/managedApis/kusto"
+                            },
+                            "webcontents": {
+                                "connectionId": "[parameters('connections_webcontents_1_externalid')]",
+                                "connectionName": "webcontents-1",
+                                "id": "/subscriptions/b6eb7b1a-37a0-4d56-b939-71c027a73bb9/providers/Microsoft.Web/locations/eastus/managedApis/webcontents"
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    ]
+}
